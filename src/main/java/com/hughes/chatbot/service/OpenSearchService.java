@@ -3,6 +3,7 @@ package com.hughes.chatbot.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hughes.chatbot.model.DocumentChunks;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +16,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 public class OpenSearchService {
 
@@ -42,7 +44,6 @@ public class OpenSearchService {
 
             String jsonBody = objectMapper.writeValueAsString(document);
 
-            // Fix URL — replace slashes and dots in ID
             String safeId = chunk.getId()
                     .replace("/", "_")
                     .replace(".", "_");
@@ -57,25 +58,23 @@ public class OpenSearchService {
                     .send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200 || response.statusCode() == 201) {
-                System.out.println("Stored: " + chunk.getId());
+                log.info("Stored: {}", chunk.getId());
             } else {
-                System.out.println("Failed to store: " + chunk.getId()
-                        + " Status: " + response.statusCode()
-                        + " Response: " + response.body());
+                log.error("Failed to store: {} Status: {} Response: {}",
+                        chunk.getId(), response.statusCode(), response.body());
             }
 
         } catch (Exception e) {
-            throw new RuntimeException("Failed to store chunk: "
-                    + chunk.getId(), e);
+            throw new RuntimeException("Failed to store chunk: " + chunk.getId(), e);
         }
     }
 
     public void storeAllChunks(List<DocumentChunks> chunks) {
-        System.out.println("Storing " + chunks.size() + " chunks into OpenSearch...");
+        log.info("Storing {} chunks into OpenSearch...", chunks.size());
         for (DocumentChunks chunk : chunks) {
             storeChunk(chunk);
         }
-        System.out.println("All chunks stored successfully!");
+        log.info("All chunks stored successfully!");
     }
 
     public boolean indexHasData() {
@@ -91,21 +90,21 @@ public class OpenSearchService {
 
             JsonNode json = objectMapper.readTree(response.body());
             int count = json.get("count").asInt();
-            System.out.println("Current document count in OpenSearch: " + count);
+            log.info("Current document count in OpenSearch: {}", count);
             return count > 0;
         } catch (Exception e) {
+            log.error("Failed to check index data: {}", e.getMessage());
             return false;
         }
     }
+
     public List<String> searchSimilarChunks(List<Float> questionVector, int k) {
         try {
-            // Convert List<Float> to float[]
             float[] vectorArray = new float[questionVector.size()];
             for (int i = 0; i < questionVector.size(); i++) {
                 vectorArray[i] = questionVector.get(i);
             }
 
-            // Build knn search query — OpenSearch 2.11 format
             Map<String, Object> knnField = new HashMap<>();
             knnField.put("vector", vectorArray);
             knnField.put("k", k);
@@ -121,7 +120,6 @@ public class OpenSearchService {
             searchBody.put("query", knnQuery);
 
             String queryJson = objectMapper.writeValueAsString(searchBody);
-            System.out.println("Search query: " + queryJson.substring(0, 100) + "...");
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint + "/" + index + "/_search"))
@@ -132,9 +130,6 @@ public class OpenSearchService {
             HttpResponse<String> response = httpClient
                     .send(request, HttpResponse.BodyHandlers.ofString());
 
-            System.out.println("Search status: " + response.statusCode());
-
-            // Parse results
             JsonNode json = objectMapper.readTree(response.body());
             JsonNode hits = json.get("hits").get("hits");
 
@@ -147,7 +142,7 @@ public class OpenSearchService {
             return chunks;
 
         } catch (Exception e) {
-            throw new RuntimeException("Search failed", e);
+            throw new RuntimeException("Search failed: " + e.getMessage(), e);
         }
     }
 }

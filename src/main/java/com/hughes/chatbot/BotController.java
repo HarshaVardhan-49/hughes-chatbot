@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -31,14 +32,21 @@ public class BotController {
             return ResponseEntity.badRequest().body(error);
         }
 
-        String answer = botService.askQuestion(question);
+        try {
+            String answer = botService.askQuestion(question.trim());
+            Map<String, String> response = new HashMap<>();
+            response.put("question", question.trim());
+            response.put("answer", answer);
+            log.info("Answer returned successfully");
+            return ResponseEntity.ok(response);
 
-        Map<String, String> response = new HashMap<>();
-        response.put("question", question);
-        response.put("answer", answer);
-
-        log.info("Answer returned successfully");
-        return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error processing question: {}", e.getMessage());
+            Map<String, String> error = new HashMap<>();
+            error.put("error", "Something went wrong. Please try again.");
+            error.put("details", e.getMessage());
+            return ResponseEntity.internalServerError().body(error);
+        }
     }
 }
 

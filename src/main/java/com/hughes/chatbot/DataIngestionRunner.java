@@ -7,7 +7,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
-import com.hughes.chatbot.service.EmbeddingService;
 
 import java.util.List;
 
@@ -21,7 +20,6 @@ public class DataIngestionRunner implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        // Check if data already exists — skip if already loaded
         if (openSearchService.indexHasData()) {
             log.info("OpenSearch already has data — skipping ingestion.");
             log.info("Knowledge base is ready.");
@@ -30,14 +28,12 @@ public class DataIngestionRunner implements CommandLineRunner {
 
         log.info("Starting data ingestion...");
 
-        // Step 1 - chunk all docs and get embeddings
         List<DocumentChunks> chunks = chunkingService.processAllDocuments();
 
         log.info("=================================");
         log.info("Total chunks created: {}", chunks.size());
         log.info("=================================");
 
-        // Step 2 - store all chunks into OpenSearch
         openSearchService.storeAllChunks(chunks);
 
         log.info("=================================");
@@ -46,9 +42,7 @@ public class DataIngestionRunner implements CommandLineRunner {
         log.info("=================================");
     }
 }
-//```
-//
-//        ---
+
 //
 //        ## What this does
 //

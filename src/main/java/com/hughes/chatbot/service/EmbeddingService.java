@@ -30,12 +30,10 @@ public class EmbeddingService {
 
     public List<Float> getEmbedding(String text) {
         try {
-            // Build request body
             ObjectNode requestBody = objectMapper.createObjectNode();
             requestBody.put("input", text);
             requestBody.put("model", model);
 
-            // Build HTTP request
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(embeddingUrl))
                     .header("Authorization", "Bearer " + apiKey)
@@ -44,18 +42,27 @@ public class EmbeddingService {
                             objectMapper.writeValueAsString(requestBody)))
                     .build();
 
-            // Send request and get response
             HttpResponse<String> response = httpClient
                     .send(request, HttpResponse.BodyHandlers.ofString());
 
-            // Parse response and extract embedding
             JsonNode responseJson = objectMapper.readTree(response.body());
-            JsonNode embeddingArray = responseJson
-                    .get("data")
-                    .get(0)
-                    .get("embedding");
 
-            // Convert to List<Float>
+            // Handle OpenAI API errors
+            if (responseJson.has("error")) {
+                String errorMsg = responseJson.get("error").get("message").asText();
+                throw new RuntimeException("OpenAI API error: " + errorMsg);
+            }
+
+            JsonNode dataNode = responseJson.get("data");
+            if (dataNode == null || dataNode.isEmpty()) {
+                throw new RuntimeException("OpenAI returned empty embedding response");
+            }
+
+            JsonNode embeddingArray = dataNode.get(0).get("embedding");
+            if (embeddingArray == null) {
+                throw new RuntimeException("No embedding found in OpenAI response");
+            }
+
             List<Float> embedding = new ArrayList<>();
             for (JsonNode value : embeddingArray) {
                 embedding.add(value.floatValue());
@@ -63,7 +70,7 @@ public class EmbeddingService {
             return embedding;
 
         } catch (Exception e) {
-            throw new RuntimeException("Failed to get embedding", e);
+            throw new RuntimeException("Failed to get embedding: " + e.getMessage(), e);
         }
     }
 }
