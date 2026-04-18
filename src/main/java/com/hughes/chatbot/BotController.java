@@ -1,51 +1,96 @@
-package com.hughes.chatbot;
+package com.hughes.chatbot.controller;
 
+import com.hughes.chatbot.exception.ApiException;
+import com.hughes.chatbot.model.DocumentChunks;
 import com.hughes.chatbot.service.BotService;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import com.hughes.chatbot.service.ChunkingService;
+import com.hughes.chatbot.service.OpenSearchService;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
-@Slf4j
 @RestController
 @RequestMapping("/bot")
-@RequiredArgsConstructor
+@CrossOrigin(origins = "*")
 public class BotController {
 
     private final BotService botService;
+    private final ChunkingService chunkingService;
+    private final OpenSearchService openSearchService;
 
-    @GetMapping("/ask")
-    public ResponseEntity<Map<String, String>> ask(
-            @RequestParam String question) {
+    public BotController(BotService botService,
+                         ChunkingService chunkingService,
+                         OpenSearchService openSearchService) {
+        this.botService = botService;
+        this.chunkingService = chunkingService;
+        this.openSearchService = openSearchService;
+    }
 
-        log.info("Question received: {}", question);
+    // ── 1. MAIN CHAT ENDPOINT ──────────────────────────────────────────
+    @PostMapping("/ask")
+    public ResponseEntity<Map<String, Object>> ask(@RequestBody Map<String, String> body) {
 
-        if (question == null || question.trim().isEmpty()) {
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Question cannot be empty");
-            return ResponseEntity.badRequest().body(error);
+        String question = body.get("question");
+
+        if (question == null || question.isBlank()) {
+            throw new ApiException("Question cannot be blank", 400);
+        }
+        if (question.length() > 500) {
+            throw new ApiException("Question too long. Max 500 characters.", 400);
         }
 
+        String answer = botService.askQuestion(question);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("question", question);
+        response.put("answer", answer);
+
+        return ResponseEntity.ok(response);
+    }
+
+    // ── 2. HEALTH CHECK ────────────────────────────────────────────────
+    @GetMapping("/health")
+    public ResponseEntity<Map<String, Object>> health() {
+
+        Map<String, Object> response = new LinkedHashMap<>();
+
         try {
-            String answer = botService.askQuestion(question.trim());
-            Map<String, String> response = new HashMap<>();
-            response.put("question", question.trim());
-            response.put("answer", answer);
-            log.info("Answer returned successfully");
+            int chunkCount = openSearchService.getDocumentCount();
+            response.put("status", "UP");
+            response.put("chunks", chunkCount);
+            response.put("version", "1.0.0");
+        } catch (Exception e) {
+            response.put("status", "DEGRADED");
+            response.put("error", "OpenSearch unreachable: " + e.getMessage());
+        }
+
+        return ResponseEntity.ok(response);
+    }
+
+    // Wipes index, re-ingests all docs from S3, re-embeds, re-stores — no server restart needed
+    @PostMapping("/admin/reindex")
+    public ResponseEntity<Map<String, Object>> reindex() {
+
+        try {
+            openSearchService.deleteIndex();
+
+            // processAllDocuments() downloads + chunks + embeds — returns the list
+            // storeAllChunks() takes that list and pushes everything into OpenSearch
+            List<DocumentChunks> chunks = chunkingService.processAllDocuments();
+            openSearchService.storeAllChunks(chunks);
+
+            int newCount = openSearchService.getDocumentCount();
+
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", "reindexed");
+            response.put("chunks", newCount);
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            log.error("Error processing question: {}", e.getMessage());
-            Map<String, String> error = new HashMap<>();
-            error.put("error", "Something went wrong. Please try again.");
-            error.put("details", e.getMessage());
-            return ResponseEntity.internalServerError().body(error);
+            throw new ApiException("Reindex failed: " + e.getMessage(), 500);
         }
     }
 }

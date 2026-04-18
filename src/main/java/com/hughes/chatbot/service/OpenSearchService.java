@@ -145,6 +145,41 @@ public class OpenSearchService {
             throw new RuntimeException("Search failed: " + e.getMessage(), e);
         }
     }
+    // Asks OpenSearch "how many chunks do we have right now?" — used by /health and /reindex
+    public int getDocumentCount() {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint + "/" + index + "/_count"))
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request,
+                    HttpResponse.BodyHandlers.ofString());
+
+            // OpenSearch returns {"count": 115, ...} — we just need that number
+            JsonNode json = objectMapper.readTree(response.body());
+            return json.get("count").asInt();
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get document count: " + e.getMessage());
+        }
+    }
+
+    // Wipes the entire index clean — called before reindex so we don't get duplicate chunks
+    public void deleteIndex() {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint + "/" + index))
+                    .DELETE()
+                    .build();
+
+            httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            System.out.println("Index deleted successfully.");
+
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete index: " + e.getMessage());
+        }
+    }
 }
 
 //OpenAI  = internet service, costs money
