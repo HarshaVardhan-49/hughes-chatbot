@@ -130,7 +130,16 @@ public class OpenSearchService {
             HttpResponse<String> response = httpClient
                     .send(request, HttpResponse.BodyHandlers.ofString());
 
+            // log the raw response so we can see exactly what OpenSearch returns
+            log.info("OpenSearch search response: {}", response.body());
+
             JsonNode json = objectMapper.readTree(response.body());
+
+            // check if OpenSearch returned an error
+            if (json.has("error")) {
+                throw new RuntimeException("OpenSearch error: " + json.get("error").toString());
+            }
+
             JsonNode hits = json.get("hits").get("hits");
 
             List<String> chunks = new ArrayList<>();
@@ -165,19 +174,49 @@ public class OpenSearchService {
         }
     }
 
-    // Wipes the entire index clean — called before reindex so we don't get duplicate chunks
+    // Wipes the entire index and recreates it with correct kNN mapping
+// so embeddings are stored as vectors not plain arrays
     public void deleteIndex() {
         try {
-            HttpRequest request = HttpRequest.newBuilder()
+            // Step 1 — delete existing index
+            HttpRequest deleteRequest = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint + "/" + index))
                     .DELETE()
                     .build();
-
-            httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            httpClient.send(deleteRequest, HttpResponse.BodyHandlers.ofString());
             System.out.println("Index deleted successfully.");
 
+            // Step 2 — recreate with kNN mapping immediately
+            String mapping = """
+                {
+                  "mappings": {
+                    "properties": {
+                      "id":        { "type": "keyword" },
+                      "fileName":  { "type": "keyword" },
+                      "chunkText": { "type": "text" },
+                      "embedding": { "type": "knn_vector", "dimension": 1536 }
+                    }
+                  },
+                  "settings": {
+                    "index": {
+                      "knn": true,
+                      "knn.algo_param.ef_search": 100
+                    }
+                  }
+                }
+                """;
+
+            HttpRequest createRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint + "/" + index))
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString(mapping))
+                    .build();
+
+            httpClient.send(createRequest, HttpResponse.BodyHandlers.ofString());
+            System.out.println("Index recreated with kNN mapping.");
+
         } catch (Exception e) {
-            throw new RuntimeException("Failed to delete index: " + e.getMessage());
+            throw new RuntimeException("Failed to delete/recreate index: " + e.getMessage());
         }
     }
 }

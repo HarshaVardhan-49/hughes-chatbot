@@ -1,5 +1,5 @@
 // Base URL of our Spring Boot backend
-const BASE_URL = "http://localhost:8080";
+const BASE_URL = "http://98.92.65.102:8080";
 
 // Sends the question to POST /bot/ask and returns the answer string
 export async function askQuestion(question) {

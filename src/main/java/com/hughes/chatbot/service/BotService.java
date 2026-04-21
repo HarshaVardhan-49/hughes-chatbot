@@ -74,8 +74,10 @@ public class BotService {
                     "field technicians. The technician may use typos or informal " +
                     "phrasing — interpret their intent and answer clearly and concisely " +
                     "using only the context provided below. " +
-                    "Format your answer in plain sentences, not raw bullet points from docs. " +
-                    "If the answer is not in the context, respond with: '" + FALLBACK_MESSAGE + "'\n\n" +
+                    "Format your answer in plain sentences. " +
+                    "Never mention document names, file names, or source references in your answer. " +
+                    "Just answer naturally as if you already know the information. " +
+                    "If the answer is not in the context, respond with: '" + FALLBACK_MESSAGE + "'\n\n"  +
                     "CONTEXT:\n" + context +
                     "\nTECHNICIAN QUESTION: " + question +
                     "\n\nANSWER:";
